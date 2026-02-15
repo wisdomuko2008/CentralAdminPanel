@@ -3,35 +3,54 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Flexi CBT – Payment</title>
-
-<script src="https://js.paystack.co/v1/inline.js"></script>
-
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-
+<title>Flexi CBT Admin</title>
 <style>
-  body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f4f6f4; }
-  .container { background: #fff; padding: 30px; width: 90%; max-width: 400px; border-radius: 12px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
-  h2 { color: #0b6623; }
-  input { width: 100%; padding: 12px; margin: 15px 0; border-radius: 8px; border: 1px solid #ccc; box-sizing: border-box; }
-  button { width: 100%; padding: 12px; background: #0b6623; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
-  button:disabled { background: #ccc; }
-  .status { margin-top: 15px; font-size: 14px; }
+body { font-family: Arial, sans-serif; padding: 20px; background: #f4f6f9; }
+h2, h3 { color: #0b3d0b; }
+input, button { padding: 8px; margin: 5px 0; border-radius: 4px; border: 1px solid #ccc; }
+button { cursor: pointer; background: #0b6623; color: white; border: none; }
+.card { background: white; padding: 12px; border-radius: 8px; margin: 10px 0; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
+.card-header { font-weight: bold; margin-bottom: 6px; }
+.card p { margin: 2px 0; }
+.card button { margin-top: 6px; background: #d32f2f; }
+.section { margin-top: 20px; }
 </style>
 </head>
 <body>
 
-<div class="container">
-  <h2>CBT Access Payment</h2>
-  <p>Pay <b>₦500</b> to get your Exam PIN</p>
-  <input type="tel" id="whatsapp" placeholder="WhatsApp Number (080...)">
-  <button id="payBtn" onclick="payWithPaystack()">Pay ₦500</button>
-  <div class="status" id="status"></div>
+<h2>Flexi CBT Admin Panel</h2>
+
+<!-- Set Exam Timing -->
+<div class="section">
+  <h3>Set Exam Timing</h3>
+  <input type="number" id="examDuration" placeholder="Duration in minutes"><br>
+  <input type="datetime-local" id="examStartTime"><br>
+  <input type="datetime-local" id="examEndTime"><br>
+  <button onclick="setExamSettings()">Save Exam Settings</button>
 </div>
 
+<!-- Active Sessions -->
+<div class="section">
+  <h3>Active Candidate Sessions</h3>
+  <button onclick="loadSessions()">Load Sessions</button>
+  <div id="sessionsList"></div>
+</div>
+
+<!-- Submitted Results -->
+<div class="section">
+  <h3>Submitted Results</h3>
+  <button onclick="openResultsPage()">View Results</button>
+</div>
+
+<div class="section">
+  <h3>AI Support Management</h3>
+  <button onclick="location.href='botControl.html'">Open Bot Control Center</button>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script>
-  // 1. FIREBASE CONFIG
+  // ===== FIREBASE CONFIG =====
   const firebaseConfig = {
     apiKey: "AIzaSyCPumFid5YNTWug52q2VDtSDQTLU9REgss",
     authDomain: "flexi-tutors.firebaseapp.com",
@@ -43,67 +62,75 @@
   firebase.initializeApp(firebaseConfig);
   const db = firebase.firestore();
 
-  // 2. PAYMENT FUNCTION
-  function payWithPaystack() {
-    const whatsapp = document.getElementById("whatsapp").value.trim();
-    const status = document.getElementById("status");
-    const payBtn = document.getElementById("payBtn");
+  // THE SECRET KEY
+  const SECRET_KEY = "FLEXI_CBT_SECURE_2026";
 
-    if (whatsapp.length < 10) {
-      alert("Please enter a valid WhatsApp number");
-      return;
-    }
+/******** FUNCTIONS ********/
+async function setExamSettings(){
+  const durationMinutes = parseInt(document.getElementById("examDuration").value);
+  const startTimeInput = document.getElementById("examStartTime").value;
+  const endTimeInput = document.getElementById("examEndTime").value;
 
-    payBtn.disabled = true;
-    status.textContent = "Processing... please wait.";
-
-    // Logic to open the modal
-    const handler = PaystackPop.setup({
-      key: 'pk_test_9408761e58ce1fe7a3a57c0df2422d887c3d4b35', // Your Live Key
-      email: whatsapp + '@flexicbt.com',
-      amount: 50000, // 500 Naira in kobo
-      currency: "NGN",
-      
-      callback: function(response) {
-        // This runs AFTER successful payment
-        status.textContent = "Verifying payment and generating PIN...";
-        saveUserToFirebase(whatsapp, response.reference);
-      },
-      onClose: function() {
-        payBtn.disabled = false;
-        status.textContent = "Window closed. Payment not finished.";
-      }
-    });
-
-    handler.openIframe();
+  if(!durationMinutes || !startTimeInput || !endTimeInput){
+    alert("Please fill all fields correctly"); return;
   }
 
-// 3. FIREBASE SAVE FUNCTION (UPDATED)
-async function saveUserToFirebase(num, ref) {
-  const status = document.getElementById("status");
-  const pin = "FT-" + Math.random().toString(36).substring(2, 8).toUpperCase();
+  const startTime = new Date(startTimeInput).getTime();
+  const endTime = new Date(endTimeInput).getTime();
+  if(endTime <= startTime){
+    alert("End time must be after start time"); return;
+  }
 
-  try {
-    // We add the 'access_key' field here to bypass production rules
-    await db.collection("subscriptions").doc(num).set({
-      whatsapp: num,
-      pin: pin,
-      paid: true,
-      reference: ref,
-      access_key: "FLEXI_CBT_SECURE_2026", // <--- THE SECRET KEY
-      createdAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
+  // UPDATED: Added access_key to pass security rules
+  await db.collection("settings").doc("examConfig").set({
+    durationMinutes, 
+    startTime, 
+    endTime,
+    access_key: SECRET_KEY 
+  }, {merge:true});
 
-    document.querySelector(".container").innerHTML = `
-      <h2 style="color:green">Payment Successful!</h2>
-      <p>Your CBT PIN is:</p>
-      <h1 style="letter-spacing:2px; color:#0b6623;">${pin}</h1>
-      <p>Save this PIN to login to your exam.</p>
+  alert(`Exam settings saved:\nDuration: ${durationMinutes} mins\nStart: ${new Date(startTime).toLocaleString()}\nEnd: ${new Date(endTime).toLocaleString()}`);
+}
+
+async function loadSessions(){
+  const container = document.getElementById("sessionsList");
+  container.innerHTML = "Loading...";
+  
+  const snapshot = await db.collection("cbtSessions").get();
+  container.innerHTML = "";
+  
+  snapshot.forEach(doc=>{
+    const d = doc.data();
+    const candidateID = d.candidateWhatsApp || doc.id;
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `
+      <div class="card-header">${d.candidateName}</div>
+      <p><strong>WhatsApp:</strong> ${candidateID}</p>
+      <p><strong>Start Time:</strong> ${new Date(d.startedAt?.seconds*1000 || Date.now()).toLocaleString()}</p>
+      <p><strong>End Time:</strong> ${new Date(d.endTime).toLocaleString()}</p>
+      <button onclick="forceSubmit('${candidateID}')">Force Submit</button>
     `;
-  } catch (e) {
-    console.error("Firebase Error: ", e);
-    status.textContent = "Error saving data. Please check your internet or contact admin.";
-  }
+    container.appendChild(card);
+  });
+}
+
+async function forceSubmit(candidateID){
+  if(!confirm("Force submit this candidate?")) return;
+  const sessionRef = db.collection("cbtSessions").doc(candidateID);
+  
+  // UPDATED: Added access_key so the admin has permission to update the session
+  await sessionRef.update({ 
+    endTime: Date.now(),
+    access_key: SECRET_KEY 
+  });
+  
+  alert("Candidate forced to submit");
+  loadSessions(); 
+}
+
+function openResultsPage(){
+  window.open("adminResults.html","_blank");
 }
 </script>
 </body>
