@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flexi CBT – Bot Control</title>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<style>
+  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f2f5; padding: 20px; margin: 0; }
+  .nav-header { background: #0b6623; color: white; padding: 15px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-radius: 8px; }
+  .container { max-width: 800px; margin: auto; }
+  .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 15px; border-left: 5px solid #0b6623; }
+  .q-text { font-size: 18px; font-weight: bold; color: #333; margin-bottom: 10px; }
+  .meta { font-size: 12px; color: #777; margin-bottom: 15px; }
+  textarea { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #ccc; resize: vertical; min-height: 60px; font-family: inherit; }
+  .actions { display: flex; gap: 10px; margin-top: 15px; }
+  button { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+  .btn-save { background: #0b6623; color: white; }
+  .btn-save:hover { background: #084d1a; }
+  .btn-del { background: #e74c3c; color: white; }
+  .btn-del:hover { background: #c0392b; }
+  .empty-msg { text-align: center; color: #777; padding: 50px; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="nav-header">
+    <span>Flexi Bot Knowledge Manager</span>
+    <button style="background:white; color:#0b6623;" onclick="location.href='admin.html'">Back to Dashboard</button>
+  </div>
+
+  <div id="pendingContainer">
+    <div class="empty-msg">Checking for pending questions...</div>
+  </div>
+</div>
+
+<script>
+  // Same Firebase Config
+  const firebaseConfig = {
+    apiKey: "AIzaSyCPumFid5YNTWug52q2VDtSDQTLU9REgss",
+    authDomain: "flexi-tutors.firebaseapp.com",
+    projectId: "flexi-tutors"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+  const SECRET_KEY = "FLEXI_CBT_SECURE_2026";
+
+  async function loadQuestions() {
+    const container = document.getElementById("pendingContainer");
+    try {
+      const snapshot = await db.collection("pendingQuestions").orderBy("timestamp", "desc").get();
+      
+      if (snapshot.empty) {
+        container.innerHTML = '<div class="empty-msg">No new questions. Your Bot is fully trained!</div>';
+        return;
+      }
+
+      container.innerHTML = "";
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        const card = document.createElement("div");
+        card.className = "card";
+        card.innerHTML = `
+          <div class="q-text">"${data.question}"</div>
+          <div class="meta">Asked by: ${data.candidateName}</div>
+          <textarea id="input_${doc.id}" placeholder="Type the answer you want the bot to give..."></textarea>
+          <div class="actions">
+            <button class="btn-save" onclick="teachBot('${doc.id}', '${data.question.toLowerCase().trim()}')">Teach Bot & Resolve</button>
+            <button class="btn-del" onclick="dismiss('${doc.id}')">Dismiss</button>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    } catch (e) {
+      container.innerHTML = `<div class="empty-msg">Error loading questions: ${e.message}</div>`;
+    }
+  }
+
+  async function teachBot(docId, questionKey) {
+    const answerValue = document.getElementById(`input_${docId}`).value;
+    if (!answerValue) return alert("Please type an answer first!");
+
+    try {
+      // 1. Add/Update AI Knowledge Base
+      await db.collection("aiAnswers").doc(questionKey).set({
+        answer: answerValue,
+        access_key: SECRET_KEY
+      });
+
+      // 2. Remove from Pending
+      await db.collection("pendingQuestions").doc(docId).delete();
+      
+      alert("Bot updated successfully!");
+      loadQuestions();
+    } catch (e) {
+      alert("Error saving: " + e.message);
+    }
+  }
+
+  async function dismiss(docId) {
+    if (confirm("Ignore this question?")) {
+      await db.collection("pendingQuestions").doc(docId).delete();
+      loadQuestions();
+    }
+  }
+
+  loadQuestions();
+</script>
+</body>
+</html>

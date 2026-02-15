@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flexi CBT – Payment</title>
+
+<script src="https://js.paystack.co/v1/inline.js"></script>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+<style>
+  body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f4f6f4; }
+  .container { background: #fff; padding: 30px; width: 90%; max-width: 400px; border-radius: 12px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+  h2 { color: #0b6623; }
+  input { width: 100%; padding: 12px; margin: 15px 0; border-radius: 8px; border: 1px solid #ccc; box-sizing: border-box; }
+  button { width: 100%; padding: 12px; background: #0b6623; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
+  button:disabled { background: #ccc; }
+  .status { margin-top: 15px; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h2>CBT Access Payment</h2>
+  <p>Pay <b>₦500</b> to get your Exam PIN</p>
+  <input type="tel" id="whatsapp" placeholder="WhatsApp Number (080...)">
+  <button id="payBtn" onclick="payWithPaystack()">Pay ₦500</button>
+  <div class="status" id="status"></div>
+</div>
+
+<script>
+  // 1. FIREBASE CONFIG
+  const firebaseConfig = {
+    apiKey: "AIzaSyCPumFid5YNTWug52q2VDtSDQTLU9REgss",
+    authDomain: "flexi-tutors.firebaseapp.com",
+    projectId: "flexi-tutors",
+    storageBucket: "flexi-tutors.firebasestorage.app",
+    messagingSenderId: "320176672406",
+    appId: "1:320176672406:web:90f19511241e51c6437cb7"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+
+  // 2. PAYMENT FUNCTION
+  function payWithPaystack() {
+    const whatsapp = document.getElementById("whatsapp").value.trim();
+    const status = document.getElementById("status");
+    const payBtn = document.getElementById("payBtn");
+
+    if (whatsapp.length < 10) {
+      alert("Please enter a valid WhatsApp number");
+      return;
+    }
+
+    payBtn.disabled = true;
+    status.textContent = "Processing... please wait.";
+
+    // Logic to open the modal
+    const handler = PaystackPop.setup({
+      key: 'pk_test_9408761e58ce1fe7a3a57c0df2422d887c3d4b35', // Your Live Key
+      email: whatsapp + '@flexicbt.com',
+      amount: 50000, // 500 Naira in kobo
+      currency: "NGN",
+      
+      callback: function(response) {
+        // This runs AFTER successful payment
+        status.textContent = "Verifying payment and generating PIN...";
+        saveUserToFirebase(whatsapp, response.reference);
+      },
+      onClose: function() {
+        payBtn.disabled = false;
+        status.textContent = "Window closed. Payment not finished.";
+      }
+    });
+
+    handler.openIframe();
+  }
+
+// 3. FIREBASE SAVE FUNCTION (UPDATED)
+async function saveUserToFirebase(num, ref) {
+  const status = document.getElementById("status");
+  const pin = "FT-" + Math.random().toString(36).substring(2, 8).toUpperCase();
+
+  try {
+    // We add the 'access_key' field here to bypass production rules
+    await db.collection("subscriptions").doc(num).set({
+      whatsapp: num,
+      pin: pin,
+      paid: true,
+      reference: ref,
+      access_key: "FLEXI_CBT_SECURE_2026", // <--- THE SECRET KEY
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    document.querySelector(".container").innerHTML = `
+      <h2 style="color:green">Payment Successful!</h2>
+      <p>Your CBT PIN is:</p>
+      <h1 style="letter-spacing:2px; color:#0b6623;">${pin}</h1>
+      <p>Save this PIN to login to your exam.</p>
+    `;
+  } catch (e) {
+    console.error("Firebase Error: ", e);
+    status.textContent = "Error saving data. Please check your internet or contact admin.";
+  }
+}
+</script>
+</body>
+</html>

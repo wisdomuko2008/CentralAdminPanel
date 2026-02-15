@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flexi CBT Admin</title>
+<style>
+body { font-family: Arial, sans-serif; padding: 20px; background: #f4f6f9; }
+h2, h3 { color: #0b3d0b; }
+input, button { padding: 8px; margin: 5px 0; border-radius: 4px; border: 1px solid #ccc; }
+button { cursor: pointer; background: #0b6623; color: white; border: none; }
+.card { background: white; padding: 12px; border-radius: 8px; margin: 10px 0; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
+.card-header { font-weight: bold; margin-bottom: 6px; }
+.card p { margin: 2px 0; }
+.card button { margin-top: 6px; background: #d32f2f; }
+.section { margin-top: 20px; }
+</style>
+</head>
+<body>
+
+<h2>Flexi CBT Admin Panel</h2>
+
+<!-- Set Exam Timing -->
+<div class="section">
+  <h3>Set Exam Timing</h3>
+  <input type="number" id="examDuration" placeholder="Duration in minutes"><br>
+  <input type="datetime-local" id="examStartTime"><br>
+  <input type="datetime-local" id="examEndTime"><br>
+  <button onclick="setExamSettings()">Save Exam Settings</button>
+</div>
+
+<!-- Active Sessions -->
+<div class="section">
+  <h3>Active Candidate Sessions</h3>
+  <button onclick="loadSessions()">Load Sessions</button>
+  <div id="sessionsList"></div>
+</div>
+
+<!-- Submitted Results -->
+<div class="section">
+  <h3>Submitted Results</h3>
+  <button onclick="openResultsPage()">View Results</button>
+</div>
+
+<div class="section">
+  <h3>AI Support Management</h3>
+  <button onclick="location.href='botControl.html'">Open Bot Control Center</button>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script>
+  // ===== FIREBASE CONFIG =====
+  const firebaseConfig = {
+    apiKey: "AIzaSyCPumFid5YNTWug52q2VDtSDQTLU9REgss",
+    authDomain: "flexi-tutors.firebaseapp.com",
+    projectId: "flexi-tutors",
+    storageBucket: "flexi-tutors.firebasestorage.app",
+    messagingSenderId: "320176672406",
+    appId: "1:320176672406:web:90f19511241e51c6437cb7"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+
+  // THE SECRET KEY
+  const SECRET_KEY = "FLEXI_CBT_SECURE_2026";
+
+/******** FUNCTIONS ********/
+async function setExamSettings(){
+  const durationMinutes = parseInt(document.getElementById("examDuration").value);
+  const startTimeInput = document.getElementById("examStartTime").value;
+  const endTimeInput = document.getElementById("examEndTime").value;
+
+  if(!durationMinutes || !startTimeInput || !endTimeInput){
+    alert("Please fill all fields correctly"); return;
+  }
+
+  const startTime = new Date(startTimeInput).getTime();
+  const endTime = new Date(endTimeInput).getTime();
+  if(endTime <= startTime){
+    alert("End time must be after start time"); return;
+  }
+
+  // UPDATED: Added access_key to pass security rules
+  await db.collection("settings").doc("examConfig").set({
+    durationMinutes, 
+    startTime, 
+    endTime,
+    access_key: SECRET_KEY 
+  }, {merge:true});
+
+  alert(`Exam settings saved:\nDuration: ${durationMinutes} mins\nStart: ${new Date(startTime).toLocaleString()}\nEnd: ${new Date(endTime).toLocaleString()}`);
+}
+
+async function loadSessions(){
+  const container = document.getElementById("sessionsList");
+  container.innerHTML = "Loading...";
+  
+  const snapshot = await db.collection("cbtSessions").get();
+  container.innerHTML = "";
+  
+  snapshot.forEach(doc=>{
+    const d = doc.data();
+    const candidateID = d.candidateWhatsApp || doc.id;
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `
+      <div class="card-header">${d.candidateName}</div>
+      <p><strong>WhatsApp:</strong> ${candidateID}</p>
+      <p><strong>Start Time:</strong> ${new Date(d.startedAt?.seconds*1000 || Date.now()).toLocaleString()}</p>
+      <p><strong>End Time:</strong> ${new Date(d.endTime).toLocaleString()}</p>
+      <button onclick="forceSubmit('${candidateID}')">Force Submit</button>
+    `;
+    container.appendChild(card);
+  });
+}
+
+async function forceSubmit(candidateID){
+  if(!confirm("Force submit this candidate?")) return;
+  const sessionRef = db.collection("cbtSessions").doc(candidateID);
+  
+  // UPDATED: Added access_key so the admin has permission to update the session
+  await sessionRef.update({ 
+    endTime: Date.now(),
+    access_key: SECRET_KEY 
+  });
+  
+  alert("Candidate forced to submit");
+  loadSessions(); 
+}
+
+function openResultsPage(){
+  window.open("adminResults.html","_blank");
+}
+</script>
+</body>
+</html>

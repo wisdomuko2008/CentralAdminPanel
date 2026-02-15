@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flexi CBT – Live Monitor</title>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<style>
+  body { font-family: 'Segoe UI', sans-serif; background: #0e1217; color: #fff; margin: 0; padding: 20px; }
+  .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0b6623; padding-bottom: 10px; margin-bottom: 20px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; }
+  
+  .card { background: #1c222a; border-radius: 10px; padding: 15px; position: relative; border: 1px solid #30363d; }
+  .card.active { border-left: 6px solid #28a745; box-shadow: 0 0 10px rgba(40, 167, 69, 0.2); }
+  .card.ended { border-left: 6px solid #d32f2f; opacity: 0.7; }
+
+  .name { font-size: 18px; font-weight: bold; margin-bottom: 5px; color: #58a6ff; }
+  .status-tag { float: right; font-size: 12px; padding: 3px 8px; border-radius: 12px; font-weight: bold; }
+  .tag-live { background: #238636; color: white; animation: pulse 2s infinite; }
+  .tag-off { background: #da3633; color: white; }
+
+  .info { font-size: 14px; margin: 5px 0; color: #8b949e; }
+  .btn-kill { width: 100%; margin-top: 15px; padding: 10px; background: #da3633; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
+  .btn-kill:hover { background: #f85149; }
+
+  @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+  .search-box { padding: 10px; border-radius: 6px; border: 1px solid #30363d; background: #0d1117; color: white; width: 250px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h2 style="margin:0;">Live Exam Monitor 🔴</h2>
+    <p id="totalCount" style="color:#8b949e; margin:0;">Active: 0</p>
+  </div>
+  <input type="text" id="search" class="search-box" placeholder="Search candidate...">
+  <button style="padding:10px; cursor:pointer;" onclick="location.href='admin.html'">Exit Monitor</button>
+</div>
+
+<div class="grid" id="monitorGrid">
+  </div>
+
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyCPumFid5YNTWug52q2VDtSDQTLU9REgss",
+    authDomain: "flexi-tutors.firebaseapp.com",
+    projectId: "flexi-tutors"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+  const SECRET_KEY = "FLEXI_CBT_SECURE_2026";
+
+  function listenToSessions() {
+    db.collection("cbtSessions").onSnapshot((snapshot) => {
+      const grid = document.getElementById("monitorGrid");
+      const searchTerm = document.getElementById("search").value.toLowerCase();
+      let activeCount = 0;
+      grid.innerHTML = "";
+
+      snapshot.forEach((doc) => {
+        const d = doc.data();
+        const now = Date.now();
+        const isExpired = d.endTime < now;
+        if(!isExpired) activeCount++;
+
+        // Filter based on search
+        if(d.candidateName.toLowerCase().includes(searchTerm)) {
+          const card = document.createElement("div");
+          card.className = `card ${isExpired ? 'ended' : 'active'}`;
+          
+          card.innerHTML = `
+            <span class="status-tag ${isExpired ? 'tag-off' : 'tag-live'}">
+              ${isExpired ? 'FINISHED' : 'LIVE'}
+            </span>
+            <div class="name">${d.candidateName}</div>
+            <div class="info">📞 ${doc.id}</div>
+            <div class="info">⏳ Ends: ${new Date(d.endTime).toLocaleTimeString()}</div>
+            ${!isExpired ? `<button class="btn-kill" onclick="terminateSession('${doc.id}', '${d.candidateName}')">TERMINATE EXAM</button>` : ''}
+          `;
+          grid.appendChild(card);
+        }
+      });
+      document.getElementById("totalCount").textContent = `Active Candidates: ${activeCount}`;
+    });
+  }
+
+  async function terminateSession(id, name) {
+    if(confirm(`Are you sure you want to FORCE STOP ${name}'s exam? This will trigger an immediate submission.`)) {
+      try {
+        await db.collection("cbtSessions").doc(id).update({
+          endTime: Date.now() - 5000, // Backdate to force immediate timeout
+          access_key: SECRET_KEY,
+          adminAction: "Force Terminated"
+        });
+        alert("Session terminated.");
+      } catch (e) {
+        alert("Error: " + e.message);
+      }
+    }
+  }
+
+  document.getElementById("search").addEventListener("input", listenToSessions);
+  listenToSessions();
+</script>
+</body>
+</html>
